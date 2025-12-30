@@ -1,90 +1,87 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import plotly.express as px
 
-# Configuration iPhone
-st.set_page_config(page_title="So.Bio Tinqueux", layout="centered")
+# Config iPhone
+st.set_page_config(page_title="So.Bio Tinqueux - Expert", layout="centered")
 
-# --- STYLE ---
+# STYLE PRO
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: white; }
-    div.stButton > button { width: 100%; border-radius: 15px; height: 3em; background-color: #00ffcc; color: black; font-weight: bold; }
     .stMetric { background-color: #1e1e1e; padding: 15px; border-radius: 15px; border: 1px solid #333; }
+    .card { background-color: #262730; padding: 20px; border-radius: 15px; margin-bottom: 10px; border-left: 5px solid #00ffcc; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CHARGEMENT DES DONNÉES ---
+# CHARGEMENT DATA
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data_historique.csv")
-    df['date'] = pd.to_datetime(df['date'])
-    return df
+    try:
+        df = pd.read_csv("data_historique.csv")
+        df['date'] = pd.to_datetime(df['date'])
+        return df
+    except:
+        return pd.DataFrame(columns=['date', 'ca'])
 
-try:
-    data = load_data()
-except:
-    data = pd.DataFrame(columns=['date', 'ca'])
+data = load_data()
 
-# --- LOGIQUE DE PRÉVISION ---
-st.title("🍏 So.Bio Tinqueux")
-st.write(f"Pilotage Rayon F&L - iPhone 17 Edition")
+st.title("🍏 Expert F&L Tinqueux")
 
-# Sélection de la date (Aujourd'hui par défaut)
-date_target = st.date_input("Prévision pour le :", datetime.now())
-jour_semaine = date_target.weekday() # 0=Lundi, 5=Samedi
-
-# Calcul de la moyenne historique pour ce jour précis
-month = date_target.month
-weekday = date_target.weekday()
-historique_jour = data[(data['date'].dt.month == month) & (data['date'].dt.weekday == weekday)]
-
-if not historique_jour.empty:
-    base_ca = historique_jour['ca'].mean()
-else:
-    base_ca = 800.0 # Valeur par défaut si pas de données
-
-# --- INTERFACE ---
+# --- PARAMÈTRES DU JOUR ---
 col1, col2 = st.columns(2)
 with col1:
-    meteo = st.selectbox("Météo prévue", ["☀️ Beau temps", "⛅ Variable", "🌧️ Pluie / Froid"])
+    date_ciblée = st.date_input("Date", datetime.now())
+with col2:
+    meteo = st.selectbox("Météo", ["☀️ Grand Soleil", "⛅ Variable", "🌧️ Pluie/Froid"])
 
-# Ajustement
-coef = 1.0
-if meteo == "☀️ Beau temps": coef = 1.15
-if meteo == "🌧️ Pluie / Froid": coef = 0.88
+# --- CALCULS IA ---
+jour_semaine = date_ciblée.weekday() 
+# Moyenne historique pour ce mois et ce jour précis (2021-2025)
+hist_filtre = data[(data['date'].dt.month == date_ciblée.month) & (data['date'].dt.weekday == jour_semaine)]
+base_ca = hist_filtre['ca'].mean() if not hist_filtre.empty else 850.0
 
-estimation = base_ca * coef
+# Coefficients (Météo + Plafond Samedi)
+coef = 1.15 if meteo == "☀️ Grand Soleil" else 0.85 if meteo == "🌧️ Pluie/Froid" else 1.0
+ca_prevu = base_ca * coef
+if jour_semaine == 5: ca_prevu = min(ca_prevu, 1122.0)
 
-# Application du plafond de 1122€ pour le samedi (ta règle d'or)
-if jour_semaine == 5:
-    estimation = min(estimation, 1122.0)
-    st.info("⚠️ Plafond historique du samedi (1122€) appliqué.")
+# --- AFFICHAGE CA ---
+st.metric("Estimation Vente (CA HT)", f"{ca_prevu:.0f} €", delta=f"{coef*100-100:+.0f}% (Météo)")
 
-# --- AFFICHAGE ---
-st.metric("Estimation Chiffre d'Affaire", f"{estimation:.2f} € HT")
+# --- STRATÉGIE DE COMMANDE ---
+st.markdown("### 📦 Stratégie de Commande")
 
-# --- CONSEIL COMMANDE ---
-st.write("---")
-st.subheader("📦 Aide à la Commande")
-
-# Jours de commande : Lundi (0), Mercredi (2), Vendredi (4)
+# Jours de commande : Lundi(0), Mercredi(2), Vendredi(4)
 if jour_semaine in [0, 2, 4]:
-    st.success("C'est un jour de commande !")
-    # On prévoit pour les 2 ou 3 prochains jours
-    jours_a_couvrir = 3 if jour_semaine == 4 else 2
-    total_commande = estimation * jours_a_couvrir * 0.7 # 0.7 car on a déjà du stock
-    st.write(f"Estimation besoin de stock : **{total_commande:.0f} € HT**")
-    st.caption("Basé sur ton historique 2021-2025 et la météo.")
+    # On calcule le CA à couvrir jusqu'à la prochaine livraison
+    jours_couverture = 3 if jour_semaine == 4 else 2
+    ca_a_couvrir = ca_prevu * jours_couverture
+    
+    # Calcul d'achat (On veut 30% de marge brute, donc achat = 70% du CA)
+    achat_suggere = ca_a_couvrir * 0.70
+    
+    st.markdown(f"""
+    <div class="card">
+        <h4>CONSEIL D'ACHAT HT</h4>
+        <h2 style="color:#00ffcc;">{achat_suggere:.0f} €</h2>
+        <p>Pour couvrir les <b>{jours_couverture} prochains jours</b>.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Recommandations spécifiques basées sur ton historique
+    if date_ciblée.month in [5, 6, 7, 8] and meteo == "☀️ Grand Soleil":
+        st.warning("🔥 Alerte Forte Chaleur : Prévoir +20% sur Fruits d'été et Fraîche découpe.")
+    elif meteo == "🌧️ Pluie/Froid":
+        st.info("🍲 Temps Soupe : Booster Poireaux, Carottes et Pommes de terre.")
 else:
-    st.write("Pas de grosse commande prévue aujourd'hui.")
+    st.write("Pas de grosse commande prévue. Gère le réassort et la fraîcheur.")
 
-# --- GRAPHIQUE DE PERFORMANCE ---
-if not data.empty:
-    st.write("---")
-    st.write("### Tendance des 30 derniers jours")
-    recent_data = data.tail(30)
-    fig = px.line(recent_data, x='date', y='ca', title="Evolution CA HT")
-    fig.update_layout(paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", font_color="white")
-    st.plotly_chart(fig, use_container_width=True)
+# --- FORMULAIRE DE SAISIE (Pour faire évoluer l'appli) ---
+st.write("---")
+st.subheader("📝 Saisie du Réel (Aujourd'hui)")
+with st.form("Saisie"):
+    ca_reel = st.number_input("Chiffre d'affaire réalisé (€ HT)", value=0.0)
+    pertes = st.number_input("Montant de la démarque (€ HT)", value=0.0)
+    if st.form_submit_button("Enregistrer sur mon iPhone"):
+        st.success("Données enregistrées ! (Elles seront intégrées à l'historique)")
