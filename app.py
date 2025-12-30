@@ -1,32 +1,24 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+import numpy as np
 
-# 1. CONFIGURATION IPHONE
-st.set_page_config(page_title="So.Bio Tinqueux - Expert", layout="centered")
+# CONFIGURATION PRO
+st.set_page_config(page_title="So.Bio Expert F&L", layout="wide")
 
-# STYLE CORRIGÉ (TEXTE NOIR LISIBLE)
+# STYLE DESIGN (TEXTE NOIR LISIBLE)
 st.markdown("""
     <style>
-    .main { background-color: #fdfaf6; }
-    /* Force le texte des métriques en noir pour la lisibilité */
-    [data-testid="stMetricValue"] { color: #1b5e20 !important; font-weight: bold !important; }
-    [data-testid="stMetricLabel"] { color: #333333 !important; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #ddd; }
-    .card { background-color: #e8f5e9; padding: 20px; border-radius: 15px; margin-bottom: 15px; border: 1px solid #c8e6c9; color: #2e7d32; }
-    .conseil-box { background-color: #fff3e0; padding: 15px; border-radius: 15px; border-left: 5px solid #ff9800; color: #e65100; font-size: 0.9em; }
-    h1, h2, h3 { color: #1b5e20; }
+    .main { background-color: #f8f9fa; }
+    [data-testid="stMetricValue"] { color: #1b5e20 !important; font-size: 2.5em !important; font-weight: 800; }
+    [data-testid="stMetricLabel"] { color: #333333 !important; font-size: 1.1em !important; }
+    .stMetric { background-color: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border: 1px solid #eee; }
+    .commande-card { background: linear-gradient(135deg, #1b5e20 0%, #388e3c 100%); color: white; padding: 30px; border-radius: 25px; }
+    .saison-card { background-color: #fff3e0; border-left: 8px solid #ff9800; padding: 20px; border-radius: 15px; color: #5d4037; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. FONCTION VACANCES ZONE B (Reims)
-def est_vacances_zone_b(d):
-    if date(2025, 12, 20) <= d <= date(2026, 1, 5): return True
-    if date(2026, 2, 7) <= d <= date(2026, 2, 23): return True
-    if date(2026, 4, 4) <= d <= date(2026, 4, 20): return True
-    return False
-
-# 3. CHARGEMENT DATA
+# CHARGEMENT DATA
 @st.cache_data
 def load_data():
     try:
@@ -38,52 +30,63 @@ def load_data():
 
 data = load_data()
 
+# HEADER
+st.image("https://images.unsplash.com/photo-1610348725531-843dff563e2c?auto=format&fit=crop&q=80&w=1200", use_container_width=True)
 st.title("🍏 Expert F&L Tinqueux")
 
-# --- PARAMÈTRES ---
-with st.container():
-    col1, col2 = st.columns(2)
-    with col1:
-        d_cible = st.date_input("Date choisie", datetime.now())
-    with col2:
-        meteo = st.selectbox("Météo", ["☀️ Grand Soleil", "⛅ Variable", "🌧️ Pluie / Froid"])
+# PARAMÈTRES
+col_date, col_meteo, col_jours = st.columns([2,2,2])
+with col_date:
+    d_cible = st.date_input("Date de prévision", datetime.now())
+with col_meteo:
+    meteo = st.selectbox("Météo Reims", ["☀️ Grand Soleil", "⛅ Variable", "🌧️ Pluie / Froid"])
+with col_jours:
+    nb_jours = st.slider("Jours à couvrir", 1, 5, 2)
 
-# --- CALCULS ---
+# CALCULS PRÉCIS (Moyenne 5 ans)
 jour_sem = d_cible.weekday()
 mois_cible = d_cible.month
-est_vac = est_vacances_zone_b(d_cible)
-
 hist_filtre = data[(data['date'].dt.month == mois_cible) & (data['date'].dt.weekday == jour_sem)]
-base_ca = hist_filtre['ca'].mean() if not hist_filtre.empty else 850.0
 
-coef = 1.0
-if meteo == "☀️ Grand Soleil": coef += 0.15
-if meteo == "🌧️ Pluie / Froid": coef -= 0.15
-if est_vac: coef += 0.10
+if not hist_filtre.empty:
+    base_ca = hist_filtre['ca'].mean()
+    std_dev = hist_filtre['ca'].std() if len(hist_filtre) > 1 else base_ca * 0.1
+    erreur_p = (std_dev / base_ca) * 100
+else:
+    base_ca, erreur_p = 850.0, 15.0
 
-ca_prevu = base_ca * coef
-if jour_sem == 5: ca_prevu = min(ca_prevu, 1122.0)
+coef = 1.15 if meteo == "☀️ Grand Soleil" else 0.85 if meteo == "🌧️ Pluie / Froid" else 1.0
+ca_final = base_ca * coef
+if jour_sem == 5: ca_final = min(ca_final, 1122.0)
 
-# --- AFFICHAGE ULTRA LISIBLE ---
-st.subheader("📈 Estimation de vente")
-st.metric("CA PRÉVU HT", f"{ca_prevu:.0f} €", delta=f"{'Vacances' if est_vac else 'Scolaire'}")
-
-# --- STRATÉGIE COMMANDE ---
+# AFFICHAGE
 st.markdown("---")
-st.subheader("📦 Conseil d'achat")
-nb_jours = st.slider("Jours à couvrir", 1, 5, 2)
-ca_total = ca_prevu * nb_jours
-achat_ht = ca_total * 0.70
+c1, c2 = st.columns(2)
 
-st.markdown(f"""
-    <div class="card">
-        <p style="margin:0; font-size:1em;">MONTANT À COMMANDER :</p>
-        <h1 style="margin:0; color:#1b5e20; font-size:2.5em;">{achat_ht:.0f} € HT</h1>
-        <p style="margin:0; font-size:0.8em;">(Basé sur {ca_total:.0f}€ de CA sur {nb_jours} jours)</p>
-    </div>
+with c1:
+    st.markdown("#### 📈 Vente Estimée")
+    st.metric("POTENTIEL CA HT", f"{ca_final:.0f} €", f"± {erreur_p:.1f}% précision")
+    st.progress(max(0, min(100, int(100-erreur_p)))/100, text="Indice de confiance")
+
+with c2:
+    st.markdown("#### 📦 Ta Commande")
+    achat_ht = (ca_final * nb_jours) * 0.70
+    st.markdown(f"""
+        <div class="commande-card">
+            <p style="margin:0; opacity:0.8; color:white;">MONTANT CONSEILLÉ (HT)</p>
+            <h1 style="color:white; margin:10px 0; font-size:3.5em;">{achat_ht:.0f} €</h1>
+            <p style="margin:0; font-size:0.9em;">🎯 Couverture de {nb_jours} jours</p>
+        </div>
     """, unsafe_allow_html=True)
 
-# CONSEIL SAISON
-if mois_cible in [12, 1]:
-    st.info("💡 **Focus :** Plein boom des agrumes & Pot-au-feu !")
+# SAISONNALITÉ
+st.markdown("---")
+st.markdown(f"""
+    <div class="saison-card">
+        <b>💡 Le conseil de l'Expert :</b><br>
+        Pour le mois de {d_cible.strftime('%B')}, surveille tes stocks de saison. 
+        Avec une météo {meteo}, les clients de Tinqueux privilégient les produits de {'fraîcheur' if 'Soleil' in meteo else 'confort (soupes/plats chauds)'}.
+    </div>
+""", unsafe_allow_html=True)
+
 
