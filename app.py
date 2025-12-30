@@ -2,119 +2,95 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 
-# 1. CONFIGURATION PRO IPHONE
-st.set_page_config(page_title="So.Bio Pilotage Expert", layout="wide")
+# CONFIG PRO IPHONE
+st.set_page_config(page_title="So.Bio Expert", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    [data-testid="stMetricValue"] { color: #1b5e20 !important; font-weight: 800; }
-    .stMetric { background-color: white; padding: 15px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .commande-section { background: linear-gradient(135deg, #1b5e20 0%, #388e3c 100%); color: white; padding: 25px; border-radius: 20px; margin-top: 10px; }
-    .recap-veille { background-color: #ffffff; border-left: 10px solid #2196f3; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
-    .section-title { color: #1b5e20; font-weight: bold; font-size: 1.2em; margin-bottom: 10px; text-transform: uppercase; }
+    [data-testid="stMetricValue"] { color: #000000 !important; font-weight: 800 !important; }
+    .stMetric { background-color: white; padding: 15px; border-radius: 15px; border: 1px solid #eee; }
+    .commande-section { background: linear-gradient(135deg, #1b5e20 0%, #388e3c 100%); color: white; padding: 25px; border-radius: 20px; border: 2px solid #000; }
+    .section-title { color: #1b5e20; font-weight: bold; font-size: 1.1em; border-bottom: 2px solid #1b5e20; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. CHARGEMENT DATA (1300+ LIGNES)
+# CHARGEMENT DATA
 @st.cache_data
 def load_data():
     try:
         df = pd.read_csv("data_historique.csv")
         df['date'] = pd.to_datetime(df['date'])
         return df
-    except:
-        return pd.DataFrame(columns=['date', 'ca'])
+    except: return pd.DataFrame(columns=['date', 'ca'])
 
 data = load_data()
 
-# --- HEADER ---
-st.title("🍏 Pilotage Rayon F&L Tinqueux")
+st.title("🍏 Pilotage Rayon Tinqueux")
 
-# --- NAVIGATION & SAISIE DU JOUR ---
+# --- 1. CONFIGURATION DES JOURS DE COMMANDE ---
+st.markdown("<p class='section-title'>⚙️ Configuration Commande</p>", unsafe_allow_html=True)
+c_cde1, c_cde2 = st.columns(2)
+with c_cde1:
+    jours_cde_choisis = st.multiselect("Mes jours de commande :", 
+                                     ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"],
+                                     default=["Lundi", "Mercredi", "Vendredi"])
+with c_cde2:
+    d_cible = st.date_input("Date consultée", datetime.now())
+    meteo = st.selectbox("Météo", ["☀️ Soleil", "⛅ Variable", "🌧️ Pluie"])
+
+# --- 2. SAISIE RÉELLE ---
 with st.sidebar:
-    st.image("https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=200")
     st.header("📝 Saisie du jour")
-    ca_saisi = st.number_input("CA HT Réalisé (€)", value=0.0)
-    casse_saisie = st.number_input("Casse connue HT (€)", value=0.0)
-    if st.button("Enregistrer & Actualiser"):
-        st.success("Données mémorisées")
+    ca_realise = st.number_input("Ton CA réalisé (€ HT)", value=0.0)
+    casse_reelle = st.number_input("Ta Casse connue (€ HT)", value=0.0)
+    st.info("Ces chiffres corrigent les indicateurs de la semaine ci-dessous.")
 
-# --- SÉLECTION DE LA DATE (Historique ou Futur) ---
-col_d1, col_d2 = st.columns([2, 1])
-with col_d1:
-    d_cible = st.date_input("Consulter une date (Passé ou Futur)", datetime.now())
-with col_d2:
-    meteo = st.selectbox("Météo", ["☀️ Grand Soleil", "⛅ Variable", "🌧️ Pluie / Froid"])
+# --- 3. RÉSULTATS DE LA SEMAINE (COHÉRENT TABLEAUX) ---
+st.markdown("<p class='section-title'>📊 Ma Semaine (Lundi au jour choisi)</p>", unsafe_allow_html=True)
 
-# --- ANALYSE DES RÉSULTATS (VEILLE & CUMUL SEMAINE) ---
-st.markdown("---")
-st.markdown("<p class='section-title'>📊 Résultats & Performance Semaine</p>", unsafe_allow_html=True)
+# Calcul dynamique basé sur saisie ou historique
+debut_sem = d_cible - timedelta(days=d_cible.weekday())
+mask = (data['date'].dt.date >= debut_sem) & (data['date'].dt.date <= d_cible)
+historique_semaine = data[mask]['ca'].sum()
 
-# Calcul Veille
-date_veille = d_cible - timedelta(days=1)
-val_veille = data[data['date'].dt.date == date_veille]
-ca_veille = val_veille['ca'].values[0] if not val_veille.empty else 0
+# On utilise le CA saisi en priorité, sinon l'historique
+ca_total_semaine = ca_realise if ca_realise > 0 else historique_semaine
+achat_ht = ca_total_semaine * 0.71 # Ton ratio moyen d'achat
+demarque_connue = casse_reelle if casse_reelle > 0 else (ca_total_semaine * 0.06)
+demarque_inconnue = ca_total_semaine * 0.043 # Ton chiffre exact
+marge_nette = ca_total_semaine - achat_ht - demarque_connue - demarque_inconnue
 
-# Calcul Semaine (Lundi à Dimanche)
-debut_semaine = d_cible - timedelta(days=d_cible.weekday())
-fin_semaine = debut_semaine + timedelta(days=6)
-mask_semaine = (data['date'].dt.date >= debut_semaine) & (data['date'].dt.date <= d_cible)
-data_semaine = data[mask_semaine]
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Vente Semaine", f"{ca_total_semaine:.0f} €")
+col2.metric("Achats (est.)", f"{achat_ht:.0f} €")
+col3.metric("Casse Totale", f"{(demarque_connue + demarque_inconnue):.0f} €")
+col4.metric("Marge Nette", f"{marge_nette:.0f} €", f"{(marge_nette/ca_total_semaine*100 if ca_total_semaine>0 else 0):.1f}%")
 
-vente_semaine = data_semaine['ca'].sum()
-achat_estime = vente_semaine * 0.73 # Ratio moyen observé dans tes fichiers
-casse_connue = vente_semaine * 0.08 # Démarque connue (~8%)
-casse_inconnue = vente_semaine * 0.043 # Démarque inconnue (4.3% de tes tableaux)
-marge_nette = vente_semaine - achat_estime - casse_connue - casse_inconnue
+# --- 4. COMMANDE (APPAREIT UNIQUEMENT LES JOURS DE CDE) ---
+nom_jour = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"][d_cible.weekday()]
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Ventes Semaine", f"{vente_semaine:.0f} €")
-c2.metric("Achats HT (est.)", f"{achat_estime:.0f} €")
-c3.metric("Casse Totale", f"{(casse_connue + casse_inconnue):.0f} €")
-c4.metric("Marge Nette HT", f"{marge_nette:.0f} €", f"{(marge_nette/vente_semaine*100 if vente_semaine>0 else 0):.1f}%")
-
-# --- PRÉVISION & COMMANDE ---
-st.markdown("---")
-st.markdown("<p class='section-title'>📦 Aide à la Commande</p>", unsafe_allow_html=True)
-
-# Calcul IA
-jour_sem = d_cible.weekday()
-mois_cible = d_cible.month
-hist_filtre = data[(data['date'].dt.month == mois_cible) & (data['date'].dt.weekday == jour_sem)]
-base_ca = hist_filtre['ca'].mean() if not hist_filtre.empty else 850.0
-
-# Ajustement Tendance (Si CA saisi est différent de l'historique)
-tendance_coef = 1.0
-if ca_saisi > 0:
-    tendance_coef = ca_saisi / (data[data['date'].dt.date == datetime.now().date() - timedelta(days=1)]['ca'].mean() or ca_saisi)
-
-coef_meteo = 1.15 if meteo == "☀️ Grand Soleil" else 0.85 if meteo == "🌧️ Pluie / Froid" else 1.0
-ca_prevu = base_ca * coef_meteo * min(max(tendance_coef, 0.8), 1.2) # Limite l'impact tendance
-
-# Placement du slider juste au dessus de la commande
-jours_cde = st.select_slider("Nombre de jours que la livraison doit couvrir :", options=[1, 2, 3, 4, 5], value=2)
-
-achat_total_ht = (ca_prevu * jours_cde) * 0.70
-
-st.markdown(f"""
-    <div class="commande-section">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <small style="opacity:0.8; text-transform:uppercase;">Estimation Vente Jour</small>
-                <h2 style="color:white; margin:0;">{ca_prevu:.0f} € HT</h2>
-            </div>
-            <div style="text-align: right; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 20px;">
-                <small style="opacity:0.8; text-transform:uppercase;">Montant à commander HT</small>
-                <h1 style="color:white; margin:0; font-size:3.5em;">{achat_total_ht:.0f} €</h1>
-                <small>Pour {jours_cde} jours de stock</small>
+if nom_jour in jours_cde_choisis:
+    st.markdown("---")
+    st.markdown("<p class='section-title'>📦 Ta Commande</p>", unsafe_allow_html=True)
+    nb_j = st.slider("Nombre de jours à couvrir", 1, 4, 2)
+    
+    # Calcul prévision
+    hist_jour = data[(data['date'].dt.month == d_cible.month) & (data['date'].dt.weekday == d_cible.weekday())]
+    base_ca = hist_jour['ca'].mean() if not hist_jour.empty else 850.0
+    coef_m = 1.15 if meteo == "☀️ Soleil" else 0.85 if meteo == "🌧️ Pluie" else 1.0
+    ca_prevu = base_ca * coef_m
+    
+    montant_cde = (ca_prevu * nb_j) * 0.70
+    
+    st.markdown(f"""
+        <div class="commande-section">
+            <small style="opacity:0.8;">C'est un jour de commande ({nom_jour})</small>
+            <div style="display:flex; justify-content: space-between; align-items: center;">
+                <h2 style="color:white; margin:0;">Vente prévue : {ca_prevu:.0f}€</h2>
+                <h1 style="color:white; margin:0; font-size:3.5em;">CDE HT : {montant_cde:.0f} €</h1>
             </div>
         </div>
-    </div>
     """, unsafe_allow_html=True)
-
-# --- RECAP HISTORIQUE DU JOUR ---
-with st.expander("🔍 Détails de l'historique pour ce jour"):
-    st.write(f"Moyenne historique des {len(hist_filtre)} dernières années : {base_ca:.2f} €")
-    if not hist_filtre.empty:
-        st.dataframe(hist_filtre[['date', 'ca']].sort_values(by='date', ascending=False))
+else:
+    st.warning(f"Aujourd'hui ({nom_jour}) n'est pas un jour de commande selon tes réglages.")
